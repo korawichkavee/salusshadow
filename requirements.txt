@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+osmnx
+pvlib
+geopandas
+shapely
+rasterio
+numpy
+pandas
+sympy
+tqdm
