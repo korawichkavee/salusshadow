@@ -18,7 +18,6 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 
 <style>
-  /* ── Base ─────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
@@ -51,22 +50,21 @@
   header {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 14px 24px;
+    gap: 14px;
+    padding: 10px 24px;
     background: var(--shadow);
     color: var(--paper);
     border-bottom: 3px solid var(--sun);
     z-index: 100;
   }
 
-  .logo {
-    font-family: var(--serif);
-    font-size: 1.5rem;
-    letter-spacing: -0.5px;
-    color: var(--sun);
-    white-space: nowrap;
+  /* FIX 1: Logo image */
+  .logo-img {
+    height: 38px;
+    width: auto;
+    display: block;
+    object-fit: contain;
   }
-  .logo span { color: var(--paper); font-style: italic; }
 
   .tagline {
     font-size: 0.7rem;
@@ -143,9 +141,7 @@
     transition: border-color 0.15s;
     outline: none;
   }
-  .field input:focus, .field select:focus {
-    border-color: var(--shade);
-  }
+  .field input:focus, .field select:focus { border-color: var(--shade); }
 
   .row-2 { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; }
 
@@ -175,7 +171,6 @@
     color: var(--ink);
   }
 
-  /* Toggle switch */
   .toggle { position: relative; display: inline-block; width: 36px; height: 20px; }
   .toggle input { opacity: 0; width: 0; height: 0; }
   .slider {
@@ -218,8 +213,10 @@
     align-items: center;
     gap: 14px;
   }
-  .result-hero.in-shade   { background: #EEF5FF; border-bottom: 1px solid #C5D8F0; }
-  .result-hero.in-sun     { background: #FFFBEC; border-bottom: 1px solid #F0E3A5; }
+  .result-hero.in-shade  { background: #EEF5FF; border-bottom: 1px solid #C5D8F0; }
+  .result-hero.in-sun    { background: #FFFBEC; border-bottom: 1px solid #F0E3A5; }
+  /* FIX 2: night state styling */
+  .result-hero.nighttime { background: #1A1F2E; border-bottom: 1px solid #2E3650; }
 
   .result-icon { font-size: 2.2rem; line-height: 1; }
 
@@ -230,12 +227,14 @@
   }
   .result-verdict.shade { color: #1A5A9A; }
   .result-verdict.sun   { color: #B87B00; }
+  .result-verdict.night { color: #9BAACF; }
 
   .result-street {
     font-size: 0.72rem;
     color: var(--muted);
     margin-top: 3px;
   }
+  .result-hero.nighttime .result-street { color: #5A6A8A; }
 
   .result-stats {
     padding: 12px 16px;
@@ -314,11 +313,7 @@
     overflow: hidden;
   }
 
-  #map {
-    width: 100%;
-    height: 100%;
-    cursor: crosshair;
-  }
+  #map { width: 100%; height: 100%; cursor: crosshair; }
 
   .mapillary-panel {
     height: 220px;
@@ -354,7 +349,6 @@
     z-index: 10;
   }
 
-  /* ── Responsive note ─────────────────────────── */
   @media (max-width: 700px) {
     .workspace { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     .sidebar { max-height: 52vh; }
@@ -362,7 +356,6 @@
     .mapillary-panel { height: 160px; }
   }
 
-  /* Leaflet marker override */
   .shade-marker {
     width: 18px; height: 18px;
     background: var(--shade);
@@ -375,8 +368,18 @@
 <body>
 
 <header>
+  <!-- FIX 1: Logo image instead of text -->
   <div>
-    <div class="logo">Salus <span>Shadow</span></div>
+    <img
+      class="logo-img"
+      src="https://i1.rgstatic.net/ii/lab.file/AS%3A11431281585919366%401755007814414_xl"
+      alt="Salus Shadow"
+      onerror="this.style.display='none'; document.getElementById('logo-fallback').style.display='block';"
+    />
+    <!-- Fallback text in case image fails to load -->
+    <div id="logo-fallback" style="display:none; font-family:var(--serif); font-size:1.5rem; color:var(--sun);">
+      Salus <span style="color:var(--paper); font-style:italic;">Shadow</span>
+    </div>
     <div class="tagline">Urban shade checker</div>
   </div>
   <div class="header-spacer"></div>
@@ -388,7 +391,6 @@
 
 <div class="workspace">
 
-  <!-- ── Sidebar ── -->
   <aside class="sidebar">
 
     <div>
@@ -460,7 +462,7 @@
           <span class="stat-value" id="stat-el">—</span>
         </div>
       </div>
-      <div class="shadow-bar-wrap">
+      <div class="shadow-bar-wrap" id="shadow-bar-section">
         <div class="shadow-bar-label">
           <span>Street shadow ratio</span>
           <span id="shadow-pct">—</span>
@@ -471,7 +473,6 @@
       </div>
     </div>
 
-    <!-- API config -->
     <div class="api-config">
       <div class="section-label">🔗 Backend API URL</div>
       <div class="field">
@@ -484,7 +485,6 @@
 
   </aside>
 
-  <!-- ── Map + Mapillary ── -->
   <div class="map-area">
     <div id="map"></div>
     <div class="mapillary-panel">
@@ -500,11 +500,8 @@
 </div>
 
 <script>
-// ── Config ────────────────────────────────────────────
-// Get your free Mapillary client token at https://www.mapillary.com/developer
 const MAPILLARY_TOKEN = "MLY|24137344532569728|c3975960ec08fefe128244f36290a00f";
 
-// ── Map init ──────────────────────────────────────────
 const DEFAULT_LAT = 42.3601, DEFAULT_LON = -71.0589;
 
 const map = L.map('map', { zoomControl: true }).setView([DEFAULT_LAT, DEFAULT_LON], 16);
@@ -514,7 +511,6 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   maxZoom: 19,
 }).addTo(map);
 
-// Custom marker
 const markerIcon = L.divIcon({
   className: '',
   html: '<div class="shade-marker"></div>',
@@ -542,7 +538,6 @@ function setCoords(lat, lng) {
   document.getElementById('lon').value = lng.toFixed(6);
 }
 
-// Sync lat/lon inputs → marker
 ['lat','lon'].forEach(id => {
   document.getElementById(id).addEventListener('change', () => {
     const lat = parseFloat(document.getElementById('lat').value);
@@ -554,7 +549,6 @@ function setCoords(lat, lng) {
   });
 });
 
-// Set default datetime to now (local)
 (function setDefaultDatetime() {
   const now = new Date();
   now.setSeconds(0, 0);
@@ -562,7 +556,6 @@ function setCoords(lat, lng) {
   document.getElementById('datetime').value = local.toISOString().slice(0, 16);
 })();
 
-// ── Shade API call ────────────────────────────────────
 async function checkShade() {
   const lat = parseFloat(document.getElementById('lat').value);
   const lon = parseFloat(document.getElementById('lon').value);
@@ -575,7 +568,6 @@ async function checkShade() {
   if (!dtLocal) return showError("Pick a date & time.");
   if (!apiBase) return showError("Enter your API URL.");
 
-  // Convert local datetime string to ISO with offset
   const dt = new Date(dtLocal);
   const offset = -dt.getTimezoneOffset();
   const sign = offset >= 0 ? '+' : '-';
@@ -632,22 +624,36 @@ function showResult(d) {
   const el      = document.getElementById('stat-el');
   const bar     = document.getElementById('shadow-bar');
   const pct     = document.getElementById('shadow-pct');
+  const barSection = document.getElementById('shadow-bar-section');
 
-  const inShade = d.in_shade;
-  const ratio   = (d.shadow_ratio * 100).toFixed(0);
+  const isNight  = d.sun_elevation < 0;
+  const inShade  = d.in_shade;
+  const ratio    = (d.shadow_ratio * 100).toFixed(0);
 
-  hero.className = 'result-hero ' + (inShade ? 'in-shade' : 'in-sun');
-  icon.textContent = inShade ? '🌑' : '☀️';
-  verdict.className = 'result-verdict ' + (inShade ? 'shade' : 'sun');
-  verdict.textContent = inShade ? 'In shade' : 'In sun';
-  street.textContent = d.street_name ? `Near ${d.street_name}` : '';
+  // FIX 2: Three states — night / shade / sun
+  if (isNight) {
+    hero.className = 'result-hero nighttime';
+    icon.textContent = '🌙';
+    verdict.className = 'result-verdict night';
+    verdict.textContent = 'After dark';
+    street.textContent = d.street_name ? `Near ${d.street_name}` : '';
+    barSection.style.display = 'none'; // shadow ratio is meaningless at night
+  } else {
+    hero.className = 'result-hero ' + (inShade ? 'in-shade' : 'in-sun');
+    icon.textContent = inShade ? '🌑' : '☀️';
+    verdict.className = 'result-verdict ' + (inShade ? 'shade' : 'sun');
+    verdict.textContent = inShade ? 'In shade' : 'In sun';
+    street.textContent = d.street_name ? `Near ${d.street_name}` : '';
+    barSection.style.display = '';
+    bar.style.width = ratio + '%';
+    pct.textContent = ratio + '%';
+  }
+
   az.textContent = d.sun_azimuth + '°';
   el.textContent = d.sun_elevation + '°';
-  bar.style.width = ratio + '%';
-  pct.textContent = ratio + '%';
 
   card.classList.add('visible');
-  document.getElementById('status-text').textContent = 'Done!';
+  document.getElementById('status-text').textContent = isNight ? 'Sun is below the horizon.' : 'Done!';
 }
 
 // ── Mapillary ─────────────────────────────────────────
@@ -657,7 +663,6 @@ let mlyReady = false;
 async function loadMapillary(lat, lng) {
   const placeholder = document.getElementById('mly-placeholder');
 
-  // Fetch nearest image via Mapillary Graph API
   const fields = 'id,thumb_1024_url,geometry';
   const apiUrl = `https://graph.mapillary.com/images?access_token=${MAPILLARY_TOKEN}&fields=${fields}&closeto=${lng},${lat}&radius=100&limit=1`;
 
@@ -669,7 +674,7 @@ async function loadMapillary(lat, lng) {
     if (!json.data || json.data.length === 0) {
       placeholder.innerHTML = '<div class="icon">📷</div><div>No street imagery nearby</div>';
       placeholder.style.display = 'flex';
-      if (viewer) { viewer.remove(); viewer = null; }
+      if (viewer) { viewer.remove(); viewer = null; mlyReady = false; }
       return;
     }
 
@@ -688,12 +693,12 @@ async function loadMapillary(lat, lng) {
       await viewer.moveTo(imgId);
     }
   } catch (e) {
-    placeholder.innerHTML = `<div class="icon">⚠️</div><div style="font-size:0.65rem;">Mapillary unavailable<br/><a href="https://www.mapillary.com/developer" target="_blank" style="color:var(--sun)">Get a free token</a></div>`;
+    console.warn('Mapillary error:', e);
+    placeholder.innerHTML = '<div class="icon">📷</div><div style="font-size:0.68rem;">Street imagery unavailable here</div>';
     placeholder.style.display = 'flex';
   }
 }
 
-// Load imagery at default pin
 loadMapillary(DEFAULT_LAT, DEFAULT_LON);
 </script>
 </body>
