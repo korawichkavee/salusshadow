@@ -316,18 +316,69 @@
   #map { width: 100%; height: 100%; cursor: crosshair; }
 
   .mapillary-panel {
-    height: 220px;
+    height: 240px;
     background: var(--shadow);
     border-top: 3px solid var(--sun);
     position: relative;
+    display: grid;
+    grid-template-columns: 1fr 88px;
+    overflow: hidden;
+  }
+
+  #mly { width: 100%; height: 100%; }
+
+  .mly-filmstrip {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: #0d1520;
+    border-left: 1px solid rgba(255,255,255,0.08);
+    overflow: hidden;
+  }
+
+  .mly-thumb {
+    flex: 1;
+    position: relative;
+    cursor: pointer;
+    overflow: hidden;
+    transition: opacity 0.15s;
+  }
+  .mly-thumb:hover { opacity: 0.8; }
+  .mly-thumb.active { outline: 2px solid var(--sun); outline-offset: -2px; }
+
+  .mly-thumb img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .mly-thumb-date {
+    position: absolute;
+    bottom: 3px; left: 3px; right: 3px;
+    font-size: 0.55rem;
+    color: rgba(255,255,255,0.75);
+    background: rgba(0,0,0,0.55);
+    border-radius: 2px;
+    padding: 1px 4px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mly-thumb-empty {
+    flex: 1;
+    background: #0d1520;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 1.2rem;
+    opacity: 0.2;
   }
 
-  .mapillary-panel #mly { width: 100%; height: 100%; }
-
   .mly-placeholder {
+    position: absolute;
+    inset: 0;
     font-size: 0.75rem;
     color: var(--muted);
     text-align: center;
@@ -335,6 +386,9 @@
     flex-direction: column;
     gap: 6px;
     align-items: center;
+    justify-content: center;
+    background: var(--shadow);
+    z-index: 5;
   }
   .mly-placeholder .icon { font-size: 2rem; opacity: 0.4; }
 
@@ -352,8 +406,8 @@
   @media (max-width: 700px) {
     .workspace { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     .sidebar { max-height: 52vh; }
-    .map-area { grid-template-rows: 1fr 160px; }
-    .mapillary-panel { height: 160px; }
+    .map-area { grid-template-rows: 1fr 180px; }
+    .mapillary-panel { height: 180px; grid-template-columns: 1fr 70px; }
   }
 
   .shade-marker {
@@ -489,10 +543,18 @@
     <div id="map"></div>
     <div class="mapillary-panel">
       <div class="mly-label">Street-level imagery · Mapillary</div>
-      <div id="mly"></div>
-      <div class="mly-placeholder" id="mly-placeholder">
-        <div class="icon">📷</div>
-        <div>Drop a pin to load street-level imagery</div>
+      <!-- Main viewer -->
+      <div style="position:relative; overflow:hidden;">
+        <div id="mly" style="width:100%;height:100%;"></div>
+        <div class="mly-placeholder" id="mly-placeholder">
+          <div class="icon">📷</div>
+          <div>Drop a pin to load street-level imagery</div>
+        </div>
+      </div>
+      <!-- Filmstrip: up to 2 thumbnails -->
+      <div class="mly-filmstrip" id="mly-filmstrip">
+        <div class="mly-thumb-empty">📷</div>
+        <div class="mly-thumb-empty">📷</div>
       </div>
     </div>
   </div>
@@ -659,28 +721,86 @@ function showResult(d) {
 // ── Mapillary ─────────────────────────────────────────
 let viewer = null;
 let mlyReady = false;
+let mlyImages = []; // cache of up to 2 image objects
 
 async function loadMapillary(lat, lng) {
   const placeholder = document.getElementById('mly-placeholder');
+  const filmstrip   = document.getElementById('mly-filmstrip');
 
-  const fields = 'id,thumb_1024_url,geometry';
-  const apiUrl = `https://graph.mapillary.com/images?access_token=${MAPILLARY_TOKEN}&fields=${fields}&closeto=${lng},${lat}&radius=100&limit=1`;
+  // Try up to 500m radius to find images
+  const radii = [100, 250, 500];
+  let images = [];
 
-  try {
-    const res = await fetch(apiUrl);
-    if (!res.ok) throw new Error('Mapillary API error');
-    const json = await res.json();
+  for (const radius of radii) {
+    try {
+      const fields = 'id,thumb_256_url,captured_at';
+      const url = `https://graph.mapillary.com/images?access_token=${MAPILLARY_TOKEN}&fields=${fields}&closeto=${lng},${lat}&radius=${radius}&limit=2`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('API error');
+      const json = await res.json();
+      if (json.data && json.data.length > 0) {
+        images = json.data;
+        break;
+      }
+    } catch (e) {
+      console.warn('Mapillary fetch error at radius', radius, e);
+    }
+  }
 
-    if (!json.data || json.data.length === 0) {
-      placeholder.innerHTML = '<div class="icon">📷</div><div>No street imagery nearby</div>';
-      placeholder.style.display = 'flex';
-      if (viewer) { viewer.remove(); viewer = null; mlyReady = false; }
-      return;
+  if (images.length === 0) {
+    placeholder.innerHTML = '<div class="icon">📷</div><div>No street imagery nearby</div>';
+    placeholder.style.display = 'flex';
+    filmstrip.innerHTML = '<div class="mly-thumb-empty">📷</div><div class="mly-thumb-empty">📷</div>';
+    if (viewer) { try { viewer.remove(); } catch(e){} viewer = null; mlyReady = false; }
+    return;
+  }
+
+  mlyImages = images;
+  placeholder.style.display = 'none';
+
+  // Build filmstrip thumbnails
+  filmstrip.innerHTML = '';
+  images.forEach((img, i) => {
+    const div = document.createElement('div');
+    div.className = 'mly-thumb' + (i === 0 ? ' active' : '');
+    div.dataset.id = img.id;
+
+    if (img.thumb_256_url) {
+      const im = document.createElement('img');
+      im.src = img.thumb_256_url;
+      im.alt = 'Street view';
+      div.appendChild(im);
     }
 
-    const imgId = json.data[0].id;
-    placeholder.style.display = 'none';
+    if (img.captured_at) {
+      const d = document.createElement('div');
+      d.className = 'mly-thumb-date';
+      d.textContent = new Date(img.captured_at).toLocaleDateString('en-US', { year:'numeric', month:'short' });
+      div.appendChild(d);
+    }
 
+    div.addEventListener('click', () => switchImage(img.id, div));
+    filmstrip.appendChild(div);
+  });
+
+  // Fill second slot if only 1 image found
+  if (images.length < 2) {
+    const empty = document.createElement('div');
+    empty.className = 'mly-thumb-empty';
+    empty.textContent = '📷';
+    filmstrip.appendChild(empty);
+  }
+
+  // Load first image into viewer
+  await switchImage(images[0].id, filmstrip.querySelector('.mly-thumb'));
+}
+
+async function switchImage(imgId, thumbEl) {
+  // Update active state
+  document.querySelectorAll('.mly-thumb').forEach(t => t.classList.remove('active'));
+  if (thumbEl) thumbEl.classList.add('active');
+
+  try {
     if (!mlyReady || !viewer) {
       viewer = new mapillary.Viewer({
         accessToken: MAPILLARY_TOKEN,
@@ -693,9 +813,7 @@ async function loadMapillary(lat, lng) {
       await viewer.moveTo(imgId);
     }
   } catch (e) {
-    console.warn('Mapillary error:', e);
-    placeholder.innerHTML = '<div class="icon">📷</div><div style="font-size:0.68rem;">Street imagery unavailable here</div>';
-    placeholder.style.display = 'flex';
+    console.warn('Mapillary viewer error:', e);
   }
 }
 
