@@ -562,7 +562,7 @@
 </div>
 
 <script>
-const MAPILLARY_TOKEN = "MLY|24137344532569728|c3975960ec08fefe128244f36290a00f";
+// Mapillary token lives in main.py (server-side proxy) — not needed here
 
 const DEFAULT_LAT = 42.3601, DEFAULT_LON = -71.0589;
 
@@ -727,24 +727,18 @@ async function loadMapillary(lat, lng) {
   const placeholder = document.getElementById('mly-placeholder');
   const filmstrip   = document.getElementById('mly-filmstrip');
 
-  // Try up to 500m radius to find images
-  const radii = [100, 250, 500];
+  // Fetch via our own backend proxy to avoid Mapillary CORS block
+  const apiBase = document.getElementById('api-url').value.replace(/\/$/, '');
   let images = [];
 
-  for (const radius of radii) {
-    try {
-      const fields = 'id,thumb_256_url,captured_at';
-      const url = `https://graph.mapillary.com/images?access_token=${MAPILLARY_TOKEN}&fields=${fields}&closeto=${lng},${lat}&radius=${radius}&limit=2`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('API error');
+  try {
+    const res = await fetch(`${apiBase}/mapillary?lat=${lat}&lon=${lng}`);
+    if (res.ok) {
       const json = await res.json();
-      if (json.data && json.data.length > 0) {
-        images = json.data;
-        break;
-      }
-    } catch (e) {
-      console.warn('Mapillary fetch error at radius', radius, e);
+      images = json.data || [];
     }
+  } catch (e) {
+    console.warn('Mapillary proxy fetch error:', e);
   }
 
   if (images.length === 0) {
@@ -803,7 +797,7 @@ async function switchImage(imgId, thumbEl) {
   try {
     if (!mlyReady || !viewer) {
       viewer = new mapillary.Viewer({
-        accessToken: MAPILLARY_TOKEN,
+        accessToken: "MLY|24137344532569728|c3975960ec08fefe128244f36290a00f",
         container: 'mly',
         imageId: imgId,
         component: { cover: false, sequence: false },
