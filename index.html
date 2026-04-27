@@ -542,16 +542,16 @@
   <div class="map-area">
     <div id="map"></div>
     <div class="mapillary-panel">
-      <div class="mly-label">Street-level imagery · Mapillary</div>
-      <!-- Main viewer -->
-      <div style="position:relative; overflow:hidden;">
+      <!-- Main viewer — takes col 1 of the grid -->
+      <div style="position:relative; overflow:hidden; width:100%; height:100%;">
+        <div class="mly-label">Street-level imagery · Mapillary</div>
         <div id="mly" style="width:100%;height:100%;"></div>
         <div class="mly-placeholder" id="mly-placeholder">
           <div class="icon">📷</div>
           <div>Drop a pin to load street-level imagery</div>
         </div>
       </div>
-      <!-- Filmstrip: up to 2 thumbnails -->
+      <!-- Filmstrip — takes col 2 of the grid -->
       <div class="mly-filmstrip" id="mly-filmstrip">
         <div class="mly-thumb-empty">📷</div>
         <div class="mly-thumb-empty">📷</div>
@@ -811,7 +811,8 @@ async function switchImage(imgId, thumbEl) {
   }
 }
 
-loadMapillary(DEFAULT_LAT, DEFAULT_LON);
+// Small delay so the panel is fully laid out before the Viewer initialises
+setTimeout(() => loadMapillary(DEFAULT_LAT, DEFAULT_LON), 300);
 </script>
 </body>
 </html>
