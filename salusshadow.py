@@ -843,8 +843,13 @@ def query_point_shade(
     az, elev = get_sun(dt_utc, lat, lon)
 
     # --- 4. Download buildings (small bbox, fast) ---
+    # Use ox.features_from_bbox directly with OSMnx 2.x bbox order: (left, bottom, right, top)
+    # i.e. (west, south, east, north) — avoids the ordering ambiguity in fetch_osm_geometries.
     try:
-        bldgs_raw = fetch_osm_geometries(None, bbox, tags={"building": True})
+        bldgs_raw = ox.features_from_bbox(
+            bbox=(west, south, east, north),
+            tags={"building": True},
+        )
         if bldgs_raw.crs is None:
             bldgs_raw = bldgs_raw.set_crs("EPSG:4326", allow_override=True)
         bldgs_raw = bldgs_raw.to_crs(utm_crs)
@@ -854,7 +859,10 @@ def query_point_shade(
             estimate_building_height(attrs)
             for attrs in bldgs.drop(columns="geometry").to_dict(orient="records")
         ]
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"[DEBUG] building fetch FAILED: {e}")
+        traceback.print_exc()
         bldgs = gpd.GeoDataFrame(columns=["geometry", "H"], crs=utm_crs)
 
     # --- 5. Compute shadow union ---
@@ -874,16 +882,20 @@ def query_point_shade(
         if include_trees:
             for tag in ({"natural": "tree"}, {"natural": "tree_row"}):
                 try:
-                    trees_raw = fetch_osm_geometries(None, bbox, tags=tag)
+                    trees_raw = ox.features_from_bbox(
+                        bbox=(west, south, east, north),
+                        tags=tag,
+                    )
                     if trees_raw.crs is None:
                         trees_raw = trees_raw.set_crs("EPSG:4326", allow_override=True)
                     trees_raw = trees_raw.to_crs(utm_crs)
+                    print(f"[DEBUG] trees fetched ({list(tag.values())[0]}): {len(trees_raw)}")
                     for geom in trees_raw.geometry:
                         sp = tree_shadow_geom(geom, default_tree_h, crown_radius, az, elev)
                         if sp is not None and not sp.is_empty:
                             all_shadow_geoms.append(sp)
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[DEBUG] tree fetch skipped ({list(tag.values())[0]}): {e}")
 
     shadow_union = unary_union(all_shadow_geoms) if all_shadow_geoms else None
 
@@ -1037,4 +1049,3 @@ def main():
 
 # if __name__ == "__main__":
 #     main()
-
